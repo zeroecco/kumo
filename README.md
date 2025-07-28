@@ -1,6 +1,6 @@
 # Kumo - Bento Job Monitor
 
-A real-time web-based monitoring application for [Boundless Bento](https://github.com/boundless/bento) job execution and task management. Kumo provides a comprehensive dashboard for tracking job progress, task dependencies, and execution timelines.
+A real-time web-based monitoring application for [Boundless Bento]([https://github.com/boundless/bento](https://github.com/risc0/risc0/tree/main/bento)) job execution and task management. Kumo provides a comprehensive dashboard for tracking job progress, task dependencies, and execution timelines.
 
 ![Kumo Dashboard](https://img.shields.io/badge/status-active-brightgreen)
 ![Node.js](https://img.shields.io/badge/node.js-v18+-green)
