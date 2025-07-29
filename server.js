@@ -320,6 +320,115 @@ apiRouter.get("/streams", async (req, res, next) => {
     }
 });
 
+// Delete a job and all its tasks
+apiRouter.delete("/jobs/:jobId", validateJobId, async (req, res, next) => {
+    try {
+        const { jobId } = req;
+
+        // First check if job exists
+        const jobCheckQuery = `SELECT id FROM jobs WHERE id = $1`;
+        const jobCheckResult = await pool.query(jobCheckQuery, [jobId]);
+
+        if (jobCheckResult.rows.length === 0) {
+            return res.status(404).json({
+                error: "Job not found",
+                message: `Job with ID ${jobId} does not exist`
+            });
+        }
+
+        // Delete in correct order: task_deps -> tasks -> jobs
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // 1. Delete task dependencies first (if table exists)
+            try {
+                await client.query('DELETE FROM task_deps WHERE job_id = $1', [jobId]);
+            } catch (error) {
+                console.log('task_deps table or job_id column may not exist, skipping...');
+            }
+
+            // 2. Delete tasks
+            await client.query('DELETE FROM tasks WHERE job_id = $1', [jobId]);
+
+            // 3. Finally delete the job
+            const deleteResult = await client.query('DELETE FROM jobs WHERE id = $1 RETURNING id', [jobId]);
+
+            await client.query('COMMIT');
+
+            res.json({
+                message: "Job deleted successfully",
+                deletedJobId: deleteResult.rows[0].id
+            });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Delete a specific task
+apiRouter.delete("/jobs/:jobId/tasks/:taskId", validateJobId, async (req, res, next) => {
+    try {
+        const { jobId } = req;
+        const { taskId } = req.params;
+
+        if (!taskId) {
+            return res.status(400).json({
+                error: "Invalid task ID",
+                message: "Task ID is required"
+            });
+        }
+
+        // Check if task exists
+        const taskCheckQuery = `SELECT task_id FROM tasks WHERE job_id = $1 AND task_id = $2`;
+        const taskCheckResult = await pool.query(taskCheckQuery, [jobId, taskId]);
+
+        if (taskCheckResult.rows.length === 0) {
+            return res.status(404).json({
+                error: "Task not found",
+                message: `Task ${taskId} not found in job ${jobId}`
+            });
+        }
+
+        // Delete task dependencies and task in correct order
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // 1. Delete task dependencies that reference this task (if table exists)
+            try {
+                await client.query('DELETE FROM task_deps WHERE job_id = $1 AND (pre_task_id = $2 OR post_task_id = $2)', [jobId, taskId]);
+            } catch (error) {
+                console.log('task_deps table may not exist, skipping...');
+            }
+
+            // 2. Delete the task
+            const deleteResult = await client.query('DELETE FROM tasks WHERE job_id = $1 AND task_id = $2 RETURNING task_id', [jobId, taskId]);
+
+            await client.query('COMMIT');
+
+            res.json({
+                message: "Task deleted successfully",
+                deletedTaskId: deleteResult.rows[0].task_id
+            });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Health check endpoint
 apiRouter.get("/health", async (req, res) => {
     try {
@@ -341,6 +450,47 @@ apiRouter.get("/health", async (req, res) => {
             timestamp: new Date().toISOString(),
             database: 'error',
             error: error.message
+        });
+    }
+});
+
+// Database schema info endpoint
+apiRouter.get("/schema", async (req, res) => {
+    try {
+        const schemaQuery = `
+            SELECT
+                table_name,
+                column_name,
+                data_type,
+                is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            ORDER BY table_name, ordinal_position
+        `;
+
+        const result = await pool.query(schemaQuery);
+
+        // Group by table
+        const schema = {};
+        result.rows.forEach(row => {
+            if (!schema[row.table_name]) {
+                schema[row.table_name] = [];
+            }
+            schema[row.table_name].push({
+                column: row.column_name,
+                type: row.data_type,
+                nullable: row.is_nullable
+            });
+        });
+
+        res.json({
+            schema,
+            tables: Object.keys(schema)
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: "Failed to get schema info",
+            message: error.message
         });
     }
 });
