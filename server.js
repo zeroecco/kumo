@@ -154,6 +154,33 @@ const apiRouter = express.Router();
 // Get all jobs with task statistics
 apiRouter.get("/jobs", async (req, res, next) => {
     try {
+        const { search, state, user_id } = req.query;
+
+        let whereClause = '';
+        let queryParams = [];
+        let paramIndex = 1;
+
+        // Build WHERE clause based on search parameters
+        if (search) {
+            whereClause += `WHERE j.id::text ILIKE $${paramIndex}`;
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        if (state) {
+            const stateCondition = whereClause ? 'AND' : 'WHERE';
+            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.state = $${paramIndex}`;
+            queryParams.push(state);
+            paramIndex++;
+        }
+
+        if (user_id) {
+            const userCondition = whereClause ? 'AND' : 'WHERE';
+            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.user_id = $${paramIndex}`;
+            queryParams.push(user_id);
+            paramIndex++;
+        }
+
         const query = `
             SELECT
                 j.id,
@@ -168,9 +195,10 @@ apiRouter.get("/jobs", async (req, res, next) => {
                 COUNT(CASE WHEN t.state = 'failed' THEN 1 END) as failed_tasks
             FROM jobs j
             LEFT JOIN tasks t ON j.id = t.job_id
+            ${whereClause}
             GROUP BY j.id, j.state, j.error, j.user_id, j.reported
             ORDER BY j.id DESC
-            LIMIT $1 OFFSET $2
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
 
         const limit = parseInt(req.query.limit) || 50;
@@ -183,13 +211,117 @@ apiRouter.get("/jobs", async (req, res, next) => {
             });
         }
 
-        const result = await pool.query(query, [limit, offset]);
+        queryParams.push(limit, offset);
+        const result = await pool.query(query, queryParams);
+
         res.json({
             jobs: result.rows,
             pagination: {
                 limit,
                 offset,
                 count: result.rows.length
+            },
+            search: {
+                term: search || null,
+                state: state || null,
+                user_id: user_id || null
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Search jobs by various criteria
+apiRouter.get("/jobs/search", async (req, res, next) => {
+    try {
+        const { jobId, partial, state, user_id, limit: limitParam, offset: offsetParam } = req.query;
+
+        let whereClause = '';
+        let queryParams = [];
+        let paramIndex = 1;
+
+        // Build WHERE clause based on search parameters
+        if (jobId) {
+            if (partial === 'true') {
+                // Partial match - search for job IDs that contain the search term
+                whereClause += `WHERE j.id::text ILIKE $${paramIndex}`;
+                queryParams.push(`%${jobId}%`);
+            } else {
+                // Exact match - search for specific job ID
+                whereClause += `WHERE j.id = $${paramIndex}`;
+                queryParams.push(jobId);
+            }
+            paramIndex++;
+        }
+
+        if (state) {
+            const stateCondition = whereClause ? 'AND' : 'WHERE';
+            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.state = $${paramIndex}`;
+            queryParams.push(state);
+            paramIndex++;
+        }
+
+        if (user_id) {
+            const userCondition = whereClause ? 'AND' : 'WHERE';
+            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.user_id = $${paramIndex}`;
+            queryParams.push(user_id);
+            paramIndex++;
+        }
+
+        // If no search criteria provided, return error
+        if (!jobId && !state && !user_id) {
+            return res.status(400).json({
+                error: "Missing search criteria",
+                message: "At least one search parameter (jobId, state, or user_id) is required"
+            });
+        }
+
+        const query = `
+            SELECT
+                j.id,
+                j.state,
+                j.error,
+                j.user_id,
+                j.reported,
+                COUNT(t.task_id) as task_count,
+                COUNT(CASE WHEN t.state = 'done' THEN 1 END) as completed_tasks,
+                COUNT(CASE WHEN t.state = 'running' THEN 1 END) as running_tasks,
+                COUNT(CASE WHEN t.state = 'pending' THEN 1 END) as pending_tasks,
+                COUNT(CASE WHEN t.state = 'failed' THEN 1 END) as failed_tasks
+            FROM jobs j
+            LEFT JOIN tasks t ON j.id = t.job_id
+            ${whereClause}
+            GROUP BY j.id, j.state, j.error, j.user_id, j.reported
+            ORDER BY j.id DESC
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+
+        const limit = parseInt(limitParam) || 50;
+        const offset = parseInt(offsetParam) || 0;
+
+        if (limit > 100) {
+            return res.status(400).json({
+                error: "Invalid limit",
+                message: "Limit cannot exceed 100"
+            });
+        }
+
+        queryParams.push(limit, offset);
+        const result = await pool.query(query, queryParams);
+
+        res.json({
+            jobs: result.rows,
+            pagination: {
+                limit,
+                offset,
+                count: result.rows.length
+            },
+            search: {
+                jobId: jobId || null,
+                partial: partial === 'true',
+                state: state || null,
+                user_id: user_id || null
             }
         });
     } catch (error) {
