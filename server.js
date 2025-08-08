@@ -7,7 +7,10 @@ const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const morgan = require("morgan");
 
-// Environment configuration
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
 const config = {
     port: process.env.PORT || 3001,
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -23,11 +26,428 @@ const config = {
     },
     rateLimit: {
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-        max: parseInt(process.env.RATE_LIMIT_MAX) || 100, // limit each IP to 100 requests per windowMs
+        max: parseInt(process.env.RATE_LIMIT_MAX) || (process.env.NODE_ENV === 'production' ? 1000 : 10000), // limit each IP to 100 requests per windowMs in production, 1000 in development
     }
 };
 
-// Initialize Express app
+// ============================================================================
+// DATABASE UTILITIES
+// ============================================================================
+
+class QueryBuilder {
+    constructor() {
+        this.selectFields = null;
+        this.fromTable = '';
+        this.joins = [];
+        this.whereConditions = [];
+        this.groupByFields = [];
+        this.orderByClauses = [];
+        this.limitValue = null;
+        this.offsetValue = null;
+        this.params = [];
+        this.paramIndex = 1;
+    }
+
+    select(fields) {
+        this.selectFields = Array.isArray(fields) ? fields : [fields];
+        return this;
+    }
+
+    from(table) {
+        this.fromTable = table;
+        return this;
+    }
+
+    join(table, condition, type = 'LEFT') {
+        this.joins.push({ table, condition, type });
+        return this;
+    }
+
+    where(condition, value = null) {
+        if (value !== null) {
+            this.whereConditions.push({ condition: condition.replace('?', `$${this.paramIndex}`), value });
+            this.params.push(value);
+            this.paramIndex++;
+        } else {
+            this.whereConditions.push({ condition, value: null });
+        }
+        return this;
+    }
+
+    groupBy(fields) {
+        this.groupByFields = Array.isArray(fields) ? fields : [fields];
+        return this;
+    }
+
+    orderBy(field, direction = 'ASC') {
+        this.orderByClauses.push({ field, direction });
+        return this;
+    }
+
+    limit(value) {
+        this.limitValue = value;
+        return this;
+    }
+
+    offset(value) {
+        this.offsetValue = value;
+        return this;
+    }
+
+    build() {
+        if (!this.selectFields) {
+            throw new Error('SELECT clause is required');
+        }
+        let query = 'SELECT ' + this.selectFields.join(', ') + ' FROM ' + this.fromTable;
+
+        // Add joins
+        this.joins.forEach(join => {
+            query += ` ${join.type} JOIN ${join.table} ON ${join.condition}`;
+        });
+
+        // Add where clause
+        if (this.whereConditions.length > 0) {
+            const whereConditions = this.whereConditions.map(w => w.condition).join(' AND ');
+            query += ' WHERE ' + whereConditions;
+        }
+
+        // Add group by
+        if (this.groupByFields.length > 0) {
+            query += ' GROUP BY ' + this.groupByFields.join(', ');
+        }
+
+        // Add order by
+        if (this.orderByClauses.length > 0) {
+            const orderClause = this.orderByClauses.map(o => `${o.field} ${o.direction}`).join(', ');
+            query += ' ORDER BY ' + orderClause;
+        }
+
+        // Add limit and offset
+        if (this.limitValue !== null) {
+            query += ` LIMIT $${this.paramIndex}`;
+            this.params.push(this.limitValue);
+            this.paramIndex++;
+        }
+
+        if (this.offsetValue !== null) {
+            query += ` OFFSET $${this.paramIndex}`;
+            this.params.push(this.offsetValue);
+        }
+
+        return { query, params: this.params };
+    }
+}
+
+// ============================================================================
+// VALIDATION UTILITIES
+// ============================================================================
+
+class Validator {
+    static validateJobId(jobId) {
+        if (!jobId) {
+            throw new Error('Job ID is required');
+        }
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const isNumeric = !isNaN(parseInt(jobId));
+        const isUUID = uuidRegex.test(jobId);
+
+        if (!isNumeric && !isUUID) {
+            throw new Error('Job ID must be a valid number or UUID');
+        }
+
+        return jobId;
+    }
+
+    static validatePagination(limit, offset) {
+        const parsedLimit = parseInt(limit) || 50;
+        const parsedOffset = parseInt(offset) || 0;
+
+        if (parsedLimit > 100) {
+            throw new Error('Limit cannot exceed 100');
+        }
+
+        if (parsedLimit < 1) {
+            throw new Error('Limit must be at least 1');
+        }
+
+        if (parsedOffset < 0) {
+            throw new Error('Offset must be non-negative');
+        }
+
+        return { limit: parsedLimit, offset: parsedOffset };
+    }
+
+    static validateSearchParams(params) {
+        const validParams = {};
+
+        if (params.jobId) {
+            validParams.jobId = params.jobId;
+        }
+
+        if (params.state && ['running', 'done', 'failed', 'pending'].includes(params.state)) {
+            validParams.state = params.state;
+        }
+
+        if (params.user_id) {
+            validParams.user_id = params.user_id;
+        }
+
+        if (params.partial === 'true' || params.partial === 'false') {
+            validParams.partial = params.partial;
+        }
+
+        return validParams;
+    }
+}
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+class ErrorHandler {
+    static handle(error, req, res, next) {
+        console.error('Error:', error);
+
+        // Database connection errors
+        if (error.code === 'ECONNREFUSED') {
+            return res.status(503).json({
+                error: "Database connection failed",
+                message: "Unable to connect to database"
+            });
+        }
+
+        // Unique constraint violation
+        if (error.code === '23505') {
+            return res.status(409).json({
+                error: "Conflict",
+                message: "Resource already exists"
+            });
+        }
+
+        // Validation errors
+        if (error.message && error.message.includes('required') || error.message.includes('must be')) {
+            return res.status(400).json({
+                error: "Validation Error",
+                message: error.message
+            });
+        }
+
+        // Default error response
+        res.status(500).json({
+            error: "Internal server error",
+            message: config.nodeEnv === 'development' ? error.message : "Something went wrong"
+        });
+    }
+}
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
+const validateJobId = (req, res, next) => {
+    try {
+        const jobId = Validator.validateJobId(req.params.jobId);
+        req.jobId = jobId;
+        next();
+    } catch (error) {
+        res.status(400).json({
+            error: "Invalid job ID",
+            message: error.message
+        });
+    }
+};
+
+// ============================================================================
+// DATABASE SERVICE
+// ============================================================================
+
+class DatabaseService {
+    constructor(pool) {
+        this.pool = pool;
+    }
+
+    async testConnection() {
+        try {
+            const result = await this.pool.query('SELECT NOW() as current_time');
+            console.log('Database connected successfully at:', result.rows[0].current_time);
+            return true;
+        } catch (error) {
+            console.error('Database connection error:', error);
+            return false;
+        }
+    }
+
+    async getJobsWithStats(searchParams = {}, pagination = {}) {
+        const { limit, offset } = Validator.validatePagination(pagination.limit, pagination.offset);
+        const validSearchParams = Validator.validateSearchParams(searchParams);
+
+                const queryBuilder = new QueryBuilder()
+            .select([
+                'j.id',
+                'j.state',
+                'j.error',
+                'j.user_id',
+                'j.reported',
+                'COUNT(t.task_id) as task_count',
+                'COUNT(CASE WHEN t.state = \'done\' THEN 1 END) as completed_tasks',
+                'COUNT(CASE WHEN t.state = \'running\' THEN 1 END) as running_tasks',
+                'COUNT(CASE WHEN t.state = \'pending\' THEN 1 END) as pending_tasks',
+                'COUNT(CASE WHEN t.state = \'failed\' THEN 1 END) as failed_tasks'
+            ])
+            .from('jobs j')
+            .join('tasks t', 'j.id = t.job_id')
+            .groupBy(['j.id', 'j.state', 'j.error', 'j.user_id', 'j.reported'])
+            .orderBy('j.id', 'DESC')
+            .limit(limit)
+            .offset(offset);
+
+        // Add search conditions
+        if (validSearchParams.jobId) {
+            if (validSearchParams.partial === 'true') {
+                queryBuilder.where('j.id::text ILIKE ?', `%${validSearchParams.jobId}%`);
+            } else {
+                queryBuilder.where('j.id = ?', validSearchParams.jobId);
+            }
+        }
+
+        if (validSearchParams.state) {
+            queryBuilder.where('j.state = ?', validSearchParams.state);
+        }
+
+        if (validSearchParams.user_id) {
+            queryBuilder.where('j.user_id = ?', validSearchParams.user_id);
+        }
+
+        const { query, params } = queryBuilder.build();
+        const result = await this.pool.query(query, params);
+
+        return {
+            jobs: result.rows,
+            pagination: { limit, offset, count: result.rows.length },
+            search: validSearchParams
+        };
+    }
+
+    async getJobDetails(jobId) {
+        const jobQuery = `
+            SELECT id, state, error, user_id, reported
+            FROM jobs WHERE id = $1
+        `;
+        const jobResult = await this.pool.query(jobQuery, [jobId]);
+
+        if (jobResult.rows.length === 0) {
+            throw new Error(`Job with ID ${jobId} does not exist`);
+        }
+
+        const tasksQuery = `
+            SELECT task_id, state, progress, retries, max_retries, timeout_secs,
+                   waiting_on, error, created_at, started_at, updated_at, task_def,
+                   prerequisites, output
+            FROM tasks WHERE job_id = $1 ORDER BY created_at ASC
+        `;
+        const tasksResult = await this.pool.query(tasksQuery, [jobId]);
+
+        return {
+            job: jobResult.rows[0],
+            tasks: tasksResult.rows,
+            taskCount: tasksResult.rows.length
+        };
+    }
+
+    async getJobDependencies(jobId) {
+        const query = `
+            SELECT pre_task_id, post_task_id
+            FROM task_deps WHERE job_id = $1
+        `;
+        const result = await this.pool.query(query, [jobId]);
+
+        return {
+            dependencies: result.rows,
+            count: result.rows.length
+        };
+    }
+
+    async deleteJob(jobId) {
+        const client = await this.pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // Check if job exists first
+            const jobCheck = await client.query('SELECT id FROM jobs WHERE id = $1', [jobId]);
+            if (jobCheck.rows.length === 0) {
+                throw new Error(`Job with ID ${jobId} does not exist`);
+            }
+
+            // Delete in correct order: task_deps -> tasks -> jobs
+            try {
+                await client.query('DELETE FROM task_deps WHERE job_id = $1', [jobId]);
+            } catch (error) {
+                console.log('task_deps table or job_id column may not exist, skipping...');
+            }
+
+            await client.query('DELETE FROM tasks WHERE job_id = $1', [jobId]);
+            const deleteResult = await client.query('DELETE FROM jobs WHERE id = $1 RETURNING id', [jobId]);
+
+            await client.query('COMMIT');
+
+            return { deletedJobId: deleteResult.rows[0].id };
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async deleteTask(jobId, taskId) {
+        const client = await this.pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // Check if task exists
+            const taskCheck = await client.query(
+                'SELECT task_id FROM tasks WHERE job_id = $1 AND task_id = $2',
+                [jobId, taskId]
+            );
+
+            if (taskCheck.rows.length === 0) {
+                throw new Error(`Task ${taskId} not found in job ${jobId}`);
+            }
+
+            // Delete task dependencies and task
+            try {
+                await client.query(
+                    'DELETE FROM task_deps WHERE job_id = $1 AND (pre_task_id = $2 OR post_task_id = $2)',
+                    [jobId, taskId]
+                );
+            } catch (error) {
+                console.log('task_deps table may not exist, skipping...');
+            }
+
+            const deleteResult = await client.query(
+                'DELETE FROM tasks WHERE job_id = $1 AND task_id = $2 RETURNING task_id',
+                [jobId, taskId]
+            );
+
+            await client.query('COMMIT');
+
+            return { deletedTaskId: deleteResult.rows[0].task_id };
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+}
+
+// ============================================================================
+// EXPRESS APP SETUP
+// ============================================================================
+
 const app = express();
 
 // Security middleware
@@ -74,7 +494,10 @@ app.use(express.static(path.join(__dirname, "public"), {
     etag: true
 }));
 
-// Database connection
+// ============================================================================
+// DATABASE CONNECTION
+// ============================================================================
+
 const pool = new Pool(config.database);
 
 // Database connection event handlers
@@ -86,147 +509,20 @@ pool.on('error', (err, client) => {
     console.error('Unexpected error on idle client', err);
 });
 
-// Test database connection
-async function testDatabaseConnection() {
-    try {
-        const result = await pool.query('SELECT NOW() as current_time');
-        console.log('Database connected successfully at:', result.rows[0].current_time);
-        return true;
-    } catch (error) {
-        console.error('Database connection error:', error);
-        return false;
-    }
-}
+// Initialize database service
+const dbService = new DatabaseService(pool);
 
-// Input validation middleware
-const validateJobId = (req, res, next) => {
-    const { jobId } = req.params;
-    if (!jobId) {
-        return res.status(400).json({
-            error: "Invalid job ID",
-            message: "Job ID is required"
-        });
-    }
+// ============================================================================
+// API ROUTES
+// ============================================================================
 
-    // Check if it's a valid UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const isNumeric = !isNaN(parseInt(jobId));
-    const isUUID = uuidRegex.test(jobId);
-
-    if (!isNumeric && !isUUID) {
-        return res.status(400).json({
-            error: "Invalid job ID",
-            message: "Job ID must be a valid number or UUID"
-        });
-    }
-
-    req.jobId = jobId; // Keep as string for UUIDs, convert to number for numeric IDs
-    next();
-};
-
-// Error handling middleware
-const errorHandler = (err, req, res, next) => {
-    console.error('Error:', err);
-
-    if (err.code === 'ECONNREFUSED') {
-        return res.status(503).json({
-            error: "Database connection failed",
-            message: "Unable to connect to database"
-        });
-    }
-
-    if (err.code === '23505') { // Unique constraint violation
-        return res.status(409).json({
-            error: "Conflict",
-            message: "Resource already exists"
-        });
-    }
-
-    res.status(500).json({
-        error: "Internal server error",
-        message: config.nodeEnv === 'development' ? err.message : "Something went wrong"
-    });
-};
-
-// API Routes
 const apiRouter = express.Router();
 
 // Get all jobs with task statistics
 apiRouter.get("/jobs", async (req, res, next) => {
     try {
-        const { search, state, user_id } = req.query;
-
-        let whereClause = '';
-        let queryParams = [];
-        let paramIndex = 1;
-
-        // Build WHERE clause based on search parameters
-        if (search) {
-            whereClause += `WHERE j.id::text ILIKE $${paramIndex}`;
-            queryParams.push(`%${search}%`);
-            paramIndex++;
-        }
-
-        if (state) {
-            const stateCondition = whereClause ? 'AND' : 'WHERE';
-            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.state = $${paramIndex}`;
-            queryParams.push(state);
-            paramIndex++;
-        }
-
-        if (user_id) {
-            const userCondition = whereClause ? 'AND' : 'WHERE';
-            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.user_id = $${paramIndex}`;
-            queryParams.push(user_id);
-            paramIndex++;
-        }
-
-        const query = `
-            SELECT
-                j.id,
-                j.state,
-                j.error,
-                j.user_id,
-                j.reported,
-                COUNT(t.task_id) as task_count,
-                COUNT(CASE WHEN t.state = 'done' THEN 1 END) as completed_tasks,
-                COUNT(CASE WHEN t.state = 'running' THEN 1 END) as running_tasks,
-                COUNT(CASE WHEN t.state = 'pending' THEN 1 END) as pending_tasks,
-                COUNT(CASE WHEN t.state = 'failed' THEN 1 END) as failed_tasks
-            FROM jobs j
-            LEFT JOIN tasks t ON j.id = t.job_id
-            ${whereClause}
-            GROUP BY j.id, j.state, j.error, j.user_id, j.reported
-            ORDER BY j.id DESC
-            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-        `;
-
-        const limit = parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.query.offset) || 0;
-
-        if (limit > 100) {
-            return res.status(400).json({
-                error: "Invalid limit",
-                message: "Limit cannot exceed 100"
-            });
-        }
-
-        queryParams.push(limit, offset);
-        const result = await pool.query(query, queryParams);
-
-        res.json({
-            jobs: result.rows,
-            pagination: {
-                limit,
-                offset,
-                count: result.rows.length
-            },
-            search: {
-                term: search || null,
-                state: state || null,
-                user_id: user_id || null
-            }
-        });
+        const result = await dbService.getJobsWithStats(req.query, req.query);
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -235,95 +531,8 @@ apiRouter.get("/jobs", async (req, res, next) => {
 // Search jobs by various criteria
 apiRouter.get("/jobs/search", async (req, res, next) => {
     try {
-        const { jobId, partial, state, user_id, limit: limitParam, offset: offsetParam } = req.query;
-
-        let whereClause = '';
-        let queryParams = [];
-        let paramIndex = 1;
-
-        // Build WHERE clause based on search parameters
-        if (jobId) {
-            if (partial === 'true') {
-                // Partial match - search for job IDs that contain the search term
-                whereClause += `WHERE j.id::text ILIKE $${paramIndex}`;
-                queryParams.push(`%${jobId}%`);
-            } else {
-                // Exact match - search for specific job ID
-                whereClause += `WHERE j.id = $${paramIndex}`;
-                queryParams.push(jobId);
-            }
-            paramIndex++;
-        }
-
-        if (state) {
-            const stateCondition = whereClause ? 'AND' : 'WHERE';
-            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.state = $${paramIndex}`;
-            queryParams.push(state);
-            paramIndex++;
-        }
-
-        if (user_id) {
-            const userCondition = whereClause ? 'AND' : 'WHERE';
-            whereClause += `${whereClause ? ' AND' : ' WHERE'} j.user_id = $${paramIndex}`;
-            queryParams.push(user_id);
-            paramIndex++;
-        }
-
-        // If no search criteria provided, return error
-        if (!jobId && !state && !user_id) {
-            return res.status(400).json({
-                error: "Missing search criteria",
-                message: "At least one search parameter (jobId, state, or user_id) is required"
-            });
-        }
-
-        const query = `
-            SELECT
-                j.id,
-                j.state,
-                j.error,
-                j.user_id,
-                j.reported,
-                COUNT(t.task_id) as task_count,
-                COUNT(CASE WHEN t.state = 'done' THEN 1 END) as completed_tasks,
-                COUNT(CASE WHEN t.state = 'running' THEN 1 END) as running_tasks,
-                COUNT(CASE WHEN t.state = 'pending' THEN 1 END) as pending_tasks,
-                COUNT(CASE WHEN t.state = 'failed' THEN 1 END) as failed_tasks
-            FROM jobs j
-            LEFT JOIN tasks t ON j.id = t.job_id
-            ${whereClause}
-            GROUP BY j.id, j.state, j.error, j.user_id, j.reported
-            ORDER BY j.id DESC
-            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-        `;
-
-        const limit = parseInt(limitParam) || 50;
-        const offset = parseInt(offsetParam) || 0;
-
-        if (limit > 100) {
-            return res.status(400).json({
-                error: "Invalid limit",
-                message: "Limit cannot exceed 100"
-            });
-        }
-
-        queryParams.push(limit, offset);
-        const result = await pool.query(query, queryParams);
-
-        res.json({
-            jobs: result.rows,
-            pagination: {
-                limit,
-                offset,
-                count: result.rows.length
-            },
-            search: {
-                jobId: jobId || null,
-                partial: partial === 'true',
-                state: state || null,
-                user_id: user_id || null
-            }
-        });
+        const result = await dbService.getJobsWithStats(req.query, req.query);
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -332,60 +541,8 @@ apiRouter.get("/jobs/search", async (req, res, next) => {
 // Get job details with all tasks
 apiRouter.get("/jobs/:jobId", validateJobId, async (req, res, next) => {
     try {
-        const { jobId } = req;
-
-        // Get job details
-        const jobQuery = `
-            SELECT
-                id,
-                state,
-                error,
-                user_id,
-                reported
-            FROM jobs
-            WHERE id = $1
-        `;
-
-        const jobResult = await pool.query(jobQuery, [req.jobId]);
-
-        if (jobResult.rows.length === 0) {
-            return res.status(404).json({
-                error: "Job not found",
-                message: `Job with ID ${jobId} does not exist`
-            });
-        }
-
-        const job = jobResult.rows[0];
-
-        // Get tasks for this job
-        const tasksQuery = `
-            SELECT
-                task_id,
-                state,
-                progress,
-                retries,
-                max_retries,
-                timeout_secs,
-                waiting_on,
-                error,
-                created_at,
-                started_at,
-                updated_at,
-                task_def,
-                prerequisites,
-                output
-            FROM tasks
-            WHERE job_id = $1
-            ORDER BY created_at ASC
-        `;
-
-        const tasksResult = await pool.query(tasksQuery, [req.jobId]);
-
-        res.json({
-            job: job,
-            tasks: tasksResult.rows,
-            taskCount: tasksResult.rows.length
-        });
+        const result = await dbService.getJobDetails(req.jobId);
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -394,21 +551,8 @@ apiRouter.get("/jobs/:jobId", validateJobId, async (req, res, next) => {
 // Get task dependencies
 apiRouter.get("/jobs/:jobId/dependencies", validateJobId, async (req, res, next) => {
     try {
-        const { jobId } = req;
-
-        const query = `
-            SELECT
-                pre_task_id,
-                post_task_id
-            FROM task_deps
-            WHERE job_id = $1
-        `;
-
-        const result = await pool.query(query, [req.jobId]);
-        res.json({
-            dependencies: result.rows,
-            count: result.rows.length
-        });
+        const result = await dbService.getJobDependencies(req.jobId);
+        res.json(result);
     } catch (error) {
         next(error);
     }
@@ -417,35 +561,19 @@ apiRouter.get("/jobs/:jobId/dependencies", validateJobId, async (req, res, next)
 // Get streams
 apiRouter.get("/streams", async (req, res, next) => {
     try {
+        const { limit, offset } = Validator.validatePagination(req.query.limit, req.query.offset);
+
         const query = `
-            SELECT
-                id,
-                job_id,
-                created_at,
-                updated_at
+            SELECT id, job_id, created_at, updated_at
             FROM streams
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
         `;
 
-        const limit = parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.query.offset) || 0;
-
-        if (limit > 100) {
-            return res.status(400).json({
-                error: "Invalid limit",
-                message: "Limit cannot exceed 100"
-            });
-        }
-
         const result = await pool.query(query, [limit, offset]);
         res.json({
             streams: result.rows,
-            pagination: {
-                limit,
-                offset,
-                count: result.rows.length
-            }
+            pagination: { limit, offset, count: result.rows.length }
         });
     } catch (error) {
         next(error);
@@ -455,50 +583,11 @@ apiRouter.get("/streams", async (req, res, next) => {
 // Delete a job and all its tasks
 apiRouter.delete("/jobs/:jobId", validateJobId, async (req, res, next) => {
     try {
-        const { jobId } = req;
-
-        // First check if job exists
-        const jobCheckQuery = `SELECT id FROM jobs WHERE id = $1`;
-        const jobCheckResult = await pool.query(jobCheckQuery, [jobId]);
-
-        if (jobCheckResult.rows.length === 0) {
-            return res.status(404).json({
-                error: "Job not found",
-                message: `Job with ID ${jobId} does not exist`
-            });
-        }
-
-        // Delete in correct order: task_deps -> tasks -> jobs
-        const client = await pool.connect();
-
-        try {
-            await client.query('BEGIN');
-
-            // 1. Delete task dependencies first (if table exists)
-            try {
-                await client.query('DELETE FROM task_deps WHERE job_id = $1', [jobId]);
-            } catch (error) {
-                console.log('task_deps table or job_id column may not exist, skipping...');
-            }
-
-            // 2. Delete tasks
-            await client.query('DELETE FROM tasks WHERE job_id = $1', [jobId]);
-
-            // 3. Finally delete the job
-            const deleteResult = await client.query('DELETE FROM jobs WHERE id = $1 RETURNING id', [jobId]);
-
-            await client.query('COMMIT');
-
-            res.json({
-                message: "Job deleted successfully",
-                deletedJobId: deleteResult.rows[0].id
-            });
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
-        }
+        const result = await dbService.deleteJob(req.jobId);
+        res.json({
+            message: "Job deleted successfully",
+            ...result
+        });
     } catch (error) {
         next(error);
     }
@@ -507,9 +596,7 @@ apiRouter.delete("/jobs/:jobId", validateJobId, async (req, res, next) => {
 // Delete a specific task
 apiRouter.delete("/jobs/:jobId/tasks/:taskId", validateJobId, async (req, res, next) => {
     try {
-        const { jobId } = req;
         const { taskId } = req.params;
-
         if (!taskId) {
             return res.status(400).json({
                 error: "Invalid task ID",
@@ -517,45 +604,11 @@ apiRouter.delete("/jobs/:jobId/tasks/:taskId", validateJobId, async (req, res, n
             });
         }
 
-        // Check if task exists
-        const taskCheckQuery = `SELECT task_id FROM tasks WHERE job_id = $1 AND task_id = $2`;
-        const taskCheckResult = await pool.query(taskCheckQuery, [jobId, taskId]);
-
-        if (taskCheckResult.rows.length === 0) {
-            return res.status(404).json({
-                error: "Task not found",
-                message: `Task ${taskId} not found in job ${jobId}`
-            });
-        }
-
-        // Delete task dependencies and task in correct order
-        const client = await pool.connect();
-
-        try {
-            await client.query('BEGIN');
-
-            // 1. Delete task dependencies that reference this task (if table exists)
-            try {
-                await client.query('DELETE FROM task_deps WHERE job_id = $1 AND (pre_task_id = $2 OR post_task_id = $2)', [jobId, taskId]);
-            } catch (error) {
-                console.log('task_deps table may not exist, skipping...');
-            }
-
-            // 2. Delete the task
-            const deleteResult = await client.query('DELETE FROM tasks WHERE job_id = $1 AND task_id = $2 RETURNING task_id', [jobId, taskId]);
-
-            await client.query('COMMIT');
-
-            res.json({
-                message: "Task deleted successfully",
-                deletedTaskId: deleteResult.rows[0].task_id
-            });
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
-        }
+        const result = await dbService.deleteTask(req.jobId, taskId);
+        res.json({
+            message: "Task deleted successfully",
+            ...result
+        });
     } catch (error) {
         next(error);
     }
@@ -564,7 +617,7 @@ apiRouter.delete("/jobs/:jobId/tasks/:taskId", validateJobId, async (req, res, n
 // Health check endpoint
 apiRouter.get("/health", async (req, res) => {
     try {
-        const dbConnected = await testDatabaseConnection();
+        const dbConnected = await dbService.testConnection();
         const status = dbConnected ? 'healthy' : 'unhealthy';
         const statusCode = dbConnected ? 200 : 503;
 
@@ -590,11 +643,7 @@ apiRouter.get("/health", async (req, res) => {
 apiRouter.get("/schema", async (req, res) => {
     try {
         const schemaQuery = `
-            SELECT
-                table_name,
-                column_name,
-                data_type,
-                is_nullable
+            SELECT table_name, column_name, data_type, is_nullable
             FROM information_schema.columns
             WHERE table_schema = 'public'
             ORDER BY table_name, ordinal_position
@@ -644,9 +693,12 @@ app.use('*', (req, res) => {
 });
 
 // Error handling middleware (must be last)
-app.use(errorHandler);
+app.use(ErrorHandler.handle);
 
-// Graceful shutdown
+// ============================================================================
+// GRACEFUL SHUTDOWN
+// ============================================================================
+
 const gracefulShutdown = async (signal) => {
     console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
 
@@ -668,7 +720,10 @@ const gracefulShutdown = async (signal) => {
     }, 30000);
 };
 
-// Start server
+// ============================================================================
+// SERVER STARTUP
+// ============================================================================
+
 const server = app.listen(config.port, () => {
     console.log(`🚀 Kumo server running on http://localhost:${config.port}`);
     console.log(`📊 Environment: ${config.nodeEnv}`);
@@ -691,4 +746,4 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Export for testing
-module.exports = { app, pool, config };
+module.exports = { app, pool, config, dbService };
