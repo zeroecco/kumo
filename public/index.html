@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bento Job Monitor</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Bento Job Monitor</h1>
+            <nav class="main-nav">
+                <button class="nav-btn active" data-page="jobs">Jobs</button>
+                <button class="nav-btn" data-page="dashboard">Dashboard</button>
+            </nav>
+            <div class="header-controls">
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Search by job ID..." class="search-input">
+                    <button class="search-btn" onclick="performSearch()">Search</button>
+                    <button class="clear-search-btn" onclick="clearSearch()" style="display: none;">Clear</button>
+                </div>
+                <button class="refresh-btn" onclick="loadJobs()">Refresh Jobs</button>
+                <div class="status-indicator" id="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Connecting...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Jobs Page -->
+        <div id="jobs-page" class="page active">
+            <div id="jobs-container">
+                <div class="loading">Loading jobs...</div>
+            </div>
+        </div>
+
+        <!-- Dashboard Page -->
+        <div id="dashboard-page" class="page">
+            <div class="dashboard-header">
+                <h2>Performance Dashboard</h2>
+                <div class="dashboard-controls">
+                    <select id="time-range" class="time-range-select">
+                        <option value="24h">Last 24 Hours</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="30d">Last 30 Days</option>
+                        <option value="90d">Last 90 Days</option>
+                    </select>
+                    <button class="refresh-btn" onclick="DashboardManager.refreshDashboard()">Refresh</button>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="total-jobs">-</div>
+                    <div class="metric-label">Total Jobs</div>
+                    <div class="metric-change positive" id="jobs-change">+0%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="success-rate">-</div>
+                    <div class="metric-label">Success Rate</div>
+                    <div class="metric-change positive" id="success-change">+0%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="avg-execution-time">-</div>
+                    <div class="metric-label">Avg Execution Time</div>
+                    <div class="metric-change negative" id="time-change">+0%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="active-jobs">-</div>
+                    <div class="metric-label">Active Jobs</div>
+                    <div class="metric-change neutral" id="active-change">0</div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-grid">
+                <!-- Job Status Distribution -->
+                <div class="chart-container">
+                    <h3>Job Status Distribution</h3>
+                    <canvas id="status-chart"></canvas>
+                </div>
+
+                <!-- Execution Time Trends -->
+                <div class="chart-container">
+                    <h3>Execution Time Trends</h3>
+                    <canvas id="execution-time-chart"></canvas>
+                </div>
+
+                <!-- Daily Job Count -->
+                <div class="chart-container">
+                    <h3>Daily Job Count</h3>
+                    <canvas id="daily-jobs-chart"></canvas>
+                </div>
+
+                <!-- Success Rate Over Time -->
+                <div class="chart-container">
+                    <h3>Success Rate Over Time</h3>
+                    <canvas id="success-rate-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Detailed Analytics -->
+            <div class="analytics-section">
+                <h3>Detailed Analytics</h3>
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h4>Top Performing Jobs</h4>
+                        <div id="top-jobs-list" class="analytics-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <h4>Failed Jobs</h4>
+                        <div id="failed-jobs-list" class="analytics-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <h4>Resource Usage</h4>
+                        <div id="resource-usage" class="analytics-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for job details -->
+    <div id="jobModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="modal-content"></div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
