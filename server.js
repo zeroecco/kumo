@@ -452,14 +452,17 @@ const app = express();
 
 // Security middleware
 app.use(helmet({
-    contentSecurityPolicy: {
+    contentSecurityPolicy: config.nodeEnv === 'production' ? {
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
             scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
             imgSrc: ["'self'", "data:", "https:"],
         },
-    },
+    } : false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false
 }));
 
 // Rate limiting
@@ -471,11 +474,21 @@ app.use(compression());
 
 // CORS configuration
 const corsOptions = {
-    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:3001'],
+    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : (config.nodeEnv === 'production' ? ['http://localhost:3000', 'http://localhost:3001'] : true),
     credentials: true,
     optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+
+// Additional headers for development
+if (config.nodeEnv === 'development') {
+    app.use((req, res, next) => {
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+        res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+        res.setHeader('Origin-Agent-Cluster', '?0');
+        next();
+    });
+}
 
 // Logging middleware
 if (config.nodeEnv === 'production') {
@@ -724,8 +737,8 @@ const gracefulShutdown = async (signal) => {
 // SERVER STARTUP
 // ============================================================================
 
-const server = app.listen(config.port, () => {
-    console.log(`🚀 Kumo server running on http://localhost:${config.port}`);
+const server = app.listen(config.port, '0.0.0.0', () => {
+    console.log(`🚀 Kumo server running on http://0.0.0.0:${config.port}`);
     console.log(`📊 Environment: ${config.nodeEnv}`);
     console.log(`🗄️  Database: ${config.database.host}:${config.database.port}/${config.database.database}`);
 });
