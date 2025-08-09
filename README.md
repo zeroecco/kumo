@@ -1,8 +1,18 @@
 # Kumo - Task Management System
 
+```
+ _  __
+| |/ /_   _ _ __ ___   ___
+| ' /| | | | '_ ` _ \ / _ \
+| . \| |_| | | | | | | |_| |
+|_|\_\\__,_|_| |_| |_|\___/
+```
+
 A clean, modular Node.js/Express application for managing jobs and tasks with PostgreSQL backend.
 
-## 🏗️ Project Structure
+> **Status**: Production-ready | **Version**: 1.0.0 | **Node.js**: >=18.0.0
+
+## Project Structure
 
 ```
 kumo/
@@ -29,31 +39,56 @@ kumo/
     └── example.test.js      # Example tests
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-1. **Install dependencies:**
+### Prerequisites
+- Node.js >=18.0.0
+- PostgreSQL >=12.0
+- npm >=8.0.0
+
+### Installation
+
+1. **Clone and install dependencies:**
    ```bash
+   git clone <repository-url>
+   cd kumo
    npm install
    ```
 
-2. **Set up environment variables:**
+2. **Configure environment variables:**
    ```bash
+   # Database configuration
    export POSTGRES_HOST=localhost
    export POSTGRES_PORT=5432
    export POSTGRES_DB=taskdb
    export POSTGRES_USER=worker
    export POSTGRES_PASSWORD=password
+
+   # Application configuration
    export NODE_ENV=development
+   export PORT=3001
    ```
 
-3. **Start the server:**
+3. **Initialize database:**
+   ```bash
+   # Ensure PostgreSQL is running and database exists
+   createdb taskdb
+   ```
+
+4. **Start the application:**
    ```bash
    npm start
    ```
 
-The server will start on `http://localhost:3001`
+5. **Verify installation:**
+   ```bash
+   curl http://localhost:3001/api/health
+   # Expected: {"status":"healthy","database":"connected"}
+   ```
 
-## 📸 Screenshots
+**Access the application at:** `http://localhost:3001`
+
+## Screenshots
 
 ### Dashboard Overview
 ![Dashboard Overview](docs/screenshots/dashboard-overview.png)
@@ -71,96 +106,244 @@ The server will start on `http://localhost:3001`
 ![Search Interface](docs/screenshots/search-interface.png)
 *Advanced search functionality with real-time filtering*
 
-## 📋 API Endpoints
+## API Reference
 
-### Jobs
-- `GET /api/jobs` - Get all jobs with task statistics
-- `GET /api/jobs/search` - Search jobs by criteria
-- `GET /api/jobs/:jobId` - Get job details with tasks
-- `GET /api/jobs/:jobId/dependencies` - Get job task dependencies
-- `DELETE /api/jobs/:jobId` - Delete job and all tasks
-- `DELETE /api/jobs/:jobId/tasks/:taskId` - Delete specific task
+### RESTful Endpoints
 
-### System
-- `GET /api/health` - Health check
-- `GET /api/schema` - Database schema information
-- `GET /api/streams` - Get streams
+#### Job Management
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| `GET` | `/api/jobs` | Retrieve all jobs with task statistics | `{jobs: [], pagination: {}, search: {}}` |
+| `GET` | `/api/jobs/search` | Search jobs by criteria | `{jobs: [], pagination: {}, search: {}}` |
+| `GET` | `/api/jobs/:jobId` | Get detailed job information | `{job: {}, tasks: [], taskCount: number}` |
+| `GET` | `/api/jobs/:jobId/dependencies` | Get task dependencies | `{dependencies: [], count: number}` |
+| `DELETE` | `/api/jobs/:jobId` | Delete job and all associated tasks | `{message: string, deletedJobId: string}` |
+| `DELETE` | `/api/jobs/:jobId/tasks/:taskId` | Delete specific task | `{message: string, deletedTaskId: string}` |
 
-## 🧹 Code Organization
+#### System Operations
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| `GET` | `/api/health` | System health check | `{status: string, database: string, uptime: number}` |
+| `GET` | `/api/schema` | Database schema information | `{schema: {}, tables: []}` |
+| `GET` | `/api/streams` | Retrieve data streams | `{streams: [], pagination: {}}` |
 
-### Configuration (`config.js`)
-- Centralized environment variable management
-- Database connection settings
-- Rate limiting configuration
-- CORS settings
+### Query Parameters
 
-### Utilities (`utils/`)
-- **QueryBuilder**: Fluent SQL query builder with parameterized queries
-- **Validator**: Input validation for job IDs, pagination, and search parameters
+#### Pagination
+- `limit` (number): Maximum number of results (default: 50, max: 100)
+- `offset` (number): Number of results to skip (default: 0)
 
-### Services (`services/`)
-- **DatabaseService**: All database operations with proper error handling
-- Transaction management for delete operations
-- Connection pooling and health checks
+#### Search Filters
+- `jobId` (string): Job identifier (supports partial matching with `partial=true`)
+- `state` (string): Job state filter (`running`, `done`, `failed`, `pending`)
+- `user_id` (string): Filter by user ID
+- `partial` (boolean): Enable partial matching for jobId search
 
-### Middleware (`middleware/`)
-- **errorHandler**: Centralized error handling with appropriate HTTP status codes
-- **security**: Security middleware setup (helmet, rate limiting, CORS)
-- **validation**: Request validation middleware
+## Architecture Overview
 
-### Routes (`routes/`)
-- Clean separation of route definitions
-- Dependency injection for database services
-- Consistent error handling
+### Module Structure
 
-## 🔧 Maintenance Guidelines
-
-### Adding New Features
-
-1. **New API endpoints**: Add to `routes/api.js`
-2. **Database operations**: Add methods to `services/DatabaseService.js`
-3. **Validation**: Add validation methods to `utils/Validator.js`
-4. **Configuration**: Add to `config.js`
-
-### Code Style
-
-- Use ES6+ features (const/let, arrow functions, template literals)
-- Follow consistent error handling patterns
-- Use async/await for database operations
-- Add JSDoc comments for complex functions
-- Use meaningful variable and function names
-
-### Error Handling
-
-- All database operations use try/catch blocks
-- Validation errors return 400 status codes
-- Database connection errors return 503 status codes
-- Generic errors return 500 status codes
-- Development mode shows detailed error messages
-
-### Security
-
-- Parameterized queries prevent SQL injection
-- Input validation on all endpoints
-- Rate limiting on API routes
-- CORS configuration for cross-origin requests
-- Helmet for security headers
-
-## 🧪 Testing
-
-The modular structure makes testing easier:
-
-```javascript
-// Example test for DatabaseService
-const { DatabaseService } = require('./services/DatabaseService');
-const mockPool = { /* mock pool */ };
-const dbService = new DatabaseService(mockPool);
-
-// Test individual methods
-const result = await dbService.getJobsWithStats({}, { limit: 10, offset: 0 });
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   HTTP Layer    │    │  Business Logic │    │  Data Access    │
+│                 │    │                 │    │                 │
+│  routes/api.js  │───▶│ DatabaseService │───▶│   PostgreSQL    │
+│  middleware/    │    │                 │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Validation    │    │   Utilities     │    │  Configuration  │
+│                 │    │                 │    │                 │
+│  Validator.js   │    │ QueryBuilder.js │    │   config.js     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-## 📝 Environment Variables
+### Core Components
+
+#### Configuration Layer (`config.js`)
+- Environment variable management with type coercion
+- Database connection pool configuration
+- Security middleware settings (rate limiting, CORS)
+- Environment-specific configurations
+
+#### Data Access Layer (`services/DatabaseService.js`)
+- **Connection Management**: Pool-based PostgreSQL connections
+- **Transaction Handling**: ACID-compliant operations with rollback support
+- **Query Optimization**: Efficient SQL generation with parameterized queries
+- **Error Recovery**: Graceful handling of connection failures and timeouts
+
+#### Business Logic Layer (`utils/`)
+- **QueryBuilder**: Fluent interface for dynamic SQL generation
+  ```javascript
+  const query = new QueryBuilder()
+      .select(['id', 'state', 'COUNT(tasks)'])
+      .from('jobs j')
+      .join('tasks t', 'j.id = t.job_id')
+      .where('j.state = ?', 'running')
+      .groupBy(['j.id'])
+      .build();
+  ```
+- **Validator**: Input sanitization and validation
+  - Job ID validation (numeric/UUID)
+  - Pagination bounds checking
+  - Search parameter sanitization
+
+#### HTTP Layer (`routes/`, `middleware/`)
+- **Route Handlers**: RESTful endpoint implementations
+- **Middleware Stack**: Security, validation, error handling
+- **Dependency Injection**: Service layer integration
+- **Response Standardization**: Consistent API responses
+
+## Development Guidelines
+
+### Code Standards
+
+#### Language Features
+- **ES2022+**: Utilize modern JavaScript features
+- **Type Safety**: Use JSDoc for type annotations
+- **Immutability**: Prefer const declarations and immutable patterns
+- **Async/Await**: Use async/await over Promise chains
+
+#### Naming Conventions
+```javascript
+// Classes: PascalCase
+class DatabaseService { }
+
+// Functions: camelCase
+async function validateJobId() { }
+
+// Constants: UPPER_SNAKE_CASE
+const MAX_RETRY_ATTEMPTS = 3;
+
+// Files: kebab-case
+// database-service.js
+```
+
+#### Error Handling Strategy
+```javascript
+// HTTP Status Codes
+400: ValidationError    // Invalid input parameters
+401: Unauthorized       // Authentication required
+403: Forbidden         // Insufficient permissions
+404: NotFound          // Resource not found
+409: Conflict          // Resource already exists
+500: InternalError     // Server-side error
+503: ServiceUnavailable // Database connection failed
+```
+
+### Security Implementation
+
+#### Input Validation
+- **SQL Injection Prevention**: Parameterized queries only
+- **XSS Protection**: HTML entity encoding
+- **Input Sanitization**: Whitelist validation approach
+- **Rate Limiting**: Per-IP request throttling
+
+#### Security Headers
+```javascript
+// Helmet configuration
+contentSecurityPolicy: {
+    defaultSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    scriptSrc: ["'self'"]
+}
+```
+
+### Database Operations
+
+#### Transaction Management
+```javascript
+const client = await pool.connect();
+try {
+    await client.query('BEGIN');
+    // ... operations ...
+    await client.query('COMMIT');
+} catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+} finally {
+    client.release();
+}
+```
+
+#### Connection Pooling
+- **Max Connections**: 20 (configurable)
+- **Idle Timeout**: 30 seconds
+- **Connection Timeout**: 2 seconds
+- **Health Checks**: Periodic connection validation
+
+## Testing
+
+### Test Architecture
+
+```
+test/
+├── unit/           # Unit tests for individual modules
+├── integration/    # Integration tests for API endpoints
+├── fixtures/       # Test data and mock objects
+└── utils/          # Test utilities and helpers
+```
+
+### Unit Testing Example
+
+```javascript
+const { expect } = require('chai');
+const Validator = require('../utils/Validator');
+
+describe('Validator', () => {
+    describe('validateJobId', () => {
+        it('should accept valid numeric job IDs', () => {
+            const result = Validator.validateJobId('123');
+            expect(result).to.equal('123');
+        });
+
+        it('should accept valid UUID job IDs', () => {
+            const uuid = '550e8400-e29b-41d4-a716-446655440000';
+            const result = Validator.validateJobId(uuid);
+            expect(result).to.equal(uuid);
+        });
+
+        it('should reject invalid job IDs', () => {
+            expect(() => Validator.validateJobId('invalid'))
+                .to.throw('Job ID must be a valid number or UUID');
+        });
+    });
+});
+```
+
+### Integration Testing
+
+```javascript
+const request = require('supertest');
+const { app } = require('../server');
+
+describe('API Endpoints', () => {
+    it('should return jobs list', async () => {
+        const response = await request(app)
+            .get('/api/jobs')
+            .expect(200);
+
+        expect(response.body).to.have.property('jobs');
+        expect(response.body).to.have.property('pagination');
+    });
+});
+```
+
+### Test Execution
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests in watch mode
+npm run test:watch
+```
+
+## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -173,10 +356,46 @@ const result = await dbService.getJobsWithStats({}, { limit: 10, offset: 0 });
 | `POSTGRES_PASSWORD` | password | Database password |
 | `ALLOWED_ORIGINS` | * | CORS allowed origins |
 
-## 🤝 Contributing
+## Contributing
 
-1. Follow the modular structure
-2. Add appropriate error handling
-3. Include input validation
-4. Write clear documentation
-5. Test your changes thoroughly
+### Development Workflow
+
+1. **Fork and Clone**
+   ```bash
+   git clone https://github.com/your-username/kumo.git
+   cd kumo
+   npm install
+   ```
+
+2. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+3. **Development Standards**
+   - Follow the established modular architecture
+   - Implement comprehensive error handling
+   - Add input validation for all new endpoints
+   - Write unit tests for new functionality
+   - Update documentation for API changes
+
+4. **Code Review Checklist**
+   - [ ] Modular structure maintained
+   - [ ] Error handling implemented
+   - [ ] Input validation added
+   - [ ] Tests written and passing
+   - [ ] Documentation updated
+   - [ ] Security considerations addressed
+
+5. **Submit Pull Request**
+   - Provide clear description of changes
+   - Include test coverage information
+   - Reference any related issues
+
+### Code Quality Standards
+
+- **Linting**: ESLint configuration enforced
+- **Formatting**: Consistent code style
+- **Documentation**: JSDoc for public APIs
+- **Testing**: Minimum 80% code coverage
+- **Security**: Security audit passed
