@@ -731,7 +731,7 @@ class JobManager {
 
         // Create timeline data - exclude pending tasks
         const taskData = tasks
-            .filter(task => task.state !== 'pending') // Exclude pending tasks from timeline
+            .filter(task => task.state !== 'pending' && task.state !== 'ready') // Exclude pending tasks from timeline
             .map(task => {
                 let startTime, endTime;
 
