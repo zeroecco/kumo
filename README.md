@@ -19,10 +19,14 @@ kumo/
 │   └── validation.js        # Request validation middleware
 ├── routes/                   # API routes
 │   └── api.js               # API endpoint definitions
-└── public/                   # Static files
-    ├── index.html
-    ├── app.js
-    └── style.css
+├── public/                   # Static files
+│   ├── index.html
+│   ├── app.js
+│   └── style.css
+├── docs/                     # Documentation
+│   └── screenshots/         # Application screenshots
+└── test/                    # Tests
+    └── example.test.js      # Example tests
 ```
 
 ## 🚀 Quick Start
@@ -48,6 +52,24 @@ kumo/
    ```
 
 The server will start on `http://localhost:3001`
+
+## 📸 Screenshots
+
+### Dashboard Overview
+![Dashboard Overview](docs/screenshots/dashboard-overview.png)
+*Main dashboard showing job statistics and real-time monitoring*
+
+### Job Details with Timeline
+![Job Timeline](docs/screenshots/job-timeline.png)
+*Detailed job view with Gantt chart timeline showing task progression*
+
+### Task Management
+![Task Management](docs/screenshots/task-management.png)
+*Task list view with progress tracking and error handling*
+
+### Search and Filtering
+![Search Interface](docs/screenshots/search-interface.png)
+*Advanced search functionality with real-time filtering*
 
 ## 📋 API Endpoints
 
