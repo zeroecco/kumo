@@ -729,38 +729,40 @@ class JobManager {
         const tasks = jobDetail.tasks;
         const now = new Date();
 
-        // Create timeline data
-        const taskData = tasks.map(task => {
-            let startTime, endTime;
+        // Create timeline data - exclude pending tasks
+        const taskData = tasks
+            .filter(task => task.state !== 'pending') // Exclude pending tasks from timeline
+            .map(task => {
+                let startTime, endTime;
 
-            try {
-                startTime = task.started_at ? new Date(task.started_at) : new Date(task.created_at);
-                endTime = task.updated_at ? new Date(task.updated_at) : now;
+                try {
+                    startTime = task.started_at ? new Date(task.started_at) : new Date(task.created_at);
+                    endTime = task.updated_at ? new Date(task.updated_at) : now;
 
-                // Validate dates
-                if (isNaN(startTime.getTime())) {
+                    // Validate dates
+                    if (isNaN(startTime.getTime())) {
+                        startTime = new Date();
+                    }
+                    if (isNaN(endTime.getTime())) {
+                        endTime = new Date();
+                    }
+                } catch (error) {
+                    console.warn('Invalid date for task:', task.task_id, error);
                     startTime = new Date();
-                }
-                if (isNaN(endTime.getTime())) {
                     endTime = new Date();
                 }
-            } catch (error) {
-                console.warn('Invalid date for task:', task.task_id, error);
-                startTime = new Date();
-                endTime = new Date();
-            }
 
-            return {
-                task: task.task_id,
-                state: task.state,
-                progress: task.progress || 0,
-                startTime: startTime,
-                endTime: endTime,
-                error: task.error,
-                retries: task.retries || 0,
-                maxRetries: task.max_retries || 0
-            };
-        });
+                return {
+                    task: task.task_id,
+                    state: task.state,
+                    progress: task.progress || 0,
+                    startTime: startTime,
+                    endTime: endTime,
+                    error: task.error,
+                    retries: task.retries || 0,
+                    maxRetries: task.max_retries || 0
+                };
+            });
 
         // Sort tasks by start time
         taskData.sort((a, b) => a.startTime - b.startTime);
