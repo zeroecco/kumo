@@ -348,6 +348,9 @@ class UIComponents {
         const state = Utils.sanitizeHtml(job.state);
         const error = job.error ? Utils.sanitizeHtml(job.error) : '';
         const userId = job.user_id ? Utils.sanitizeHtml(job.user_id) : 'N/A';
+        const taskCount = parseInt(job.task_count) || 0;
+        const completedTasks = parseInt(job.completed_tasks) || 0;
+        const progressPercent = taskCount > 0 ? Utils.calculatePercentage(completedTasks, taskCount) : 0;
 
         return `
             <div class="job-card" data-job-id="${jobId}">
@@ -376,6 +379,11 @@ class UIComponents {
                 </div>
 
                 ${error ? `<div class="job-error">Error: ${error}</div>` : ''}
+                <div class="job-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
 
                 <div class="job-actions">
                     <button class="view-details-btn" data-job-id="${jobId}">View Details</button>
@@ -1456,4 +1464,3 @@ window.addEventListener('beforeunload', function() {
     window.refreshDashboard = DashboardManager.refreshDashboard.bind(DashboardManager);
     window.switchPage = NavigationManager.switchPage.bind(NavigationManager);
 })();
-
