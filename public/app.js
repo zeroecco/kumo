@@ -350,7 +350,24 @@ class UIComponents {
         const userId = job.user_id ? Utils.sanitizeHtml(job.user_id) : 'N/A';
         const taskCount = parseInt(job.task_count) || 0;
         const completedTasks = parseInt(job.completed_tasks) || 0;
-        const progressPercent = taskCount > 0 ? Utils.calculatePercentage(completedTasks, taskCount) : 0;
+        const runningTasks = parseInt(job.running_tasks) || 0;
+        const failedTasks = parseInt(job.failed_tasks) || 0;
+
+        // Calculate progress based on completed tasks
+        let progressPercent = 0;
+        if (taskCount > 0) {
+            progressPercent = Utils.calculatePercentage(completedTasks, taskCount);
+        }
+
+        // Determine progress color based on job state
+        let progressColor = '#27ae60'; // Default green
+        if (job.state === 'failed') {
+            progressColor = '#e74c3c'; // Red for failed
+        } else if (job.state === 'running') {
+            progressColor = '#f39c12'; // Orange for running
+        } else if (progressPercent === 100) {
+            progressColor = '#27ae60'; // Green for completed
+        }
 
         return `
             <div class="job-card" data-job-id="${jobId}">
@@ -367,21 +384,41 @@ class UIComponents {
                     <div class="stat">
                         <div class="stat-value">${job.completed_tasks || 0}</div>
                         <div class="stat-label">Completed</div>
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill completed" style="width: ${taskCount > 0 ? (completedTasks / taskCount) * 100 : 0}%"></div>
+                        </div>
                     </div>
                     <div class="stat">
                         <div class="stat-value">${job.running_tasks || 0}</div>
                         <div class="stat-label">Running</div>
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill running" style="width: ${taskCount > 0 ? (runningTasks / taskCount) * 100 : 0}%"></div>
+                        </div>
                     </div>
                     <div class="stat">
                         <div class="stat-value">${job.failed_tasks || 0}</div>
                         <div class="stat-label">Failed</div>
+                        <div class="mini-progress">
+                            <div class="mini-progress-fill failed" style="width: ${taskCount > 0 ? (failedTasks / taskCount) * 100 : 0}%"></div>
+                        </div>
                     </div>
                 </div>
 
                 ${error ? `<div class="job-error">Error: ${error}</div>` : ''}
                 <div class="job-progress">
+                    <div class="job-progress-header">
+                        <span class="job-progress-label">Overall Progress</span>
+                        <span class="job-progress-percentage">${progressPercent}%</span>
+                    </div>
                     <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progressPercent}%"></div>
+                        <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
+                    </div>
+                    <div class="progress-details">
+                        <small>${completedTasks} of ${taskCount} tasks completed</small>
+                        <div class="progress-status">
+                            <span class="status-indicator ${job.state.toLowerCase()}">${job.state}</span>
+                            ${runningTasks > 0 ? `<span class="active-tasks">${runningTasks} active</span>` : ''}
+                        </div>
                     </div>
                 </div>
 
