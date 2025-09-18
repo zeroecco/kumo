@@ -269,6 +269,10 @@ class ApiService {
     static async clearCompletedJobs() {
         return await this.request('/jobs/completed', { method: 'DELETE' });
     }
+
+    static async clearFailedJobs() {
+        return await this.request('/jobs/failed', { method: 'DELETE' });
+    }
 }
 
 // ============================================================================
@@ -639,6 +643,33 @@ class JobManager {
 
         } catch (error) {
             ErrorHandler.handle(error, 'clearing completed jobs');
+        }
+    }
+
+    static async clearFailedJobs() {
+        if (!confirm('Are you sure you want to clear all failed jobs? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            if (!stateManager.state.isConnected) {
+                throw new Error('Not connected to API. Please check the connection.');
+            }
+
+            const result = await ApiService.clearFailedJobs();
+
+            // Show success message
+            if (result.deletedJobsCount > 0) {
+                alert(`Successfully cleared ${result.deletedJobsCount} failed job(s).`);
+            } else {
+                alert('No failed jobs found to clear.');
+            }
+
+            // Refresh the jobs list
+            await JobManager.loadJobs();
+
+        } catch (error) {
+            ErrorHandler.handle(error, 'clearing failed jobs');
         }
     }
 
@@ -1507,6 +1538,7 @@ window.addEventListener('beforeunload', function() {
     window.deleteJob = JobManager.deleteJob.bind(JobManager);
     window.deleteTask = JobManager.deleteTask.bind(JobManager);
     window.clearCompletedJobs = JobManager.clearCompletedJobs.bind(JobManager);
+    window.clearFailedJobs = JobManager.clearFailedJobs.bind(JobManager);
     window.performSearch = SearchManager.performSearch.bind(SearchManager);
     window.clearSearch = SearchManager.clearSearch.bind(SearchManager);
     window.refreshDashboard = DashboardManager.refreshDashboard.bind(DashboardManager);

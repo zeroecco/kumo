@@ -46,6 +46,19 @@ router.delete("/jobs/completed", async (req, res, next) => {
     }
 });
 
+// Clear all failed jobs (must be before /jobs/:jobId routes)
+router.delete("/jobs/failed", async (req, res, next) => {
+    try {
+        const result = await dbService.clearFailedJobs();
+        res.json({
+            message: result.message,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Get job details with all tasks
 router.get("/jobs/:jobId", validateJobId, async (req, res, next) => {
     try {

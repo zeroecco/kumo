@@ -151,6 +151,22 @@ body {
   background: #c0392b;
 }
 
+.clear-failed-btn {
+  background: #e67e22;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 8px;
+  transition: background-color 0.2s;
+}
+
+.clear-failed-btn:hover {
+  background: #d35400;
+}
+
 .jobs-grid {
   display: grid;
   gap: 20px;
