@@ -265,6 +265,10 @@ class ApiService {
         Utils.validateParams({ jobId, taskId }, ['jobId', 'taskId']);
         return await this.request(`/jobs/${jobId}/tasks/${taskId}`, { method: 'DELETE' });
     }
+
+    static async clearCompletedJobs() {
+        return await this.request('/jobs/completed', { method: 'DELETE' });
+    }
 }
 
 // ============================================================================
@@ -608,6 +612,33 @@ class JobManager {
 
         } catch (error) {
             ErrorHandler.handle(error, 'deleting task');
+        }
+    }
+
+    static async clearCompletedJobs() {
+        if (!confirm('Are you sure you want to clear all completed jobs? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            if (!stateManager.state.isConnected) {
+                throw new Error('Not connected to API. Please check the connection.');
+            }
+
+            const result = await ApiService.clearCompletedJobs();
+
+            // Show success message
+            if (result.deletedJobsCount > 0) {
+                alert(`Successfully cleared ${result.deletedJobsCount} completed job(s).`);
+            } else {
+                alert('No completed jobs found to clear.');
+            }
+
+            // Refresh the jobs list
+            await JobManager.loadJobs();
+
+        } catch (error) {
+            ErrorHandler.handle(error, 'clearing completed jobs');
         }
     }
 
@@ -1296,7 +1327,6 @@ class DashboardManager {
 
         this.loadTopJobs(jobs);
         this.loadFailedJobs(jobs);
-        this.loadResourceUsage();
     }
 
     static loadTopJobs(jobs) {
@@ -1345,26 +1375,6 @@ class DashboardManager {
         `).join('');
     }
 
-    static loadResourceUsage() {
-        const container = document.getElementById('resource-usage');
-        if (!container) return;
-
-        // Simulate resource usage data
-        const resources = [
-            { name: 'CPU Usage', value: '45%', status: 'normal' },
-            { name: 'Memory Usage', value: '62%', status: 'warning' },
-            { name: 'Disk Usage', value: '78%', status: 'critical' },
-            { name: 'Network I/O', value: '23%', status: 'normal' }
-        ];
-
-        container.innerHTML = resources.map(resource => `
-            <div class="analytics-item">
-                <span class="job-id">${resource.name}</span>
-                <span class="job-status state-${resource.status}">${resource.value}</span>
-                <span class="job-metric">${resource.status}</span>
-            </div>
-        `).join('');
-    }
 }
 
 // ============================================================================
@@ -1496,6 +1506,7 @@ window.addEventListener('beforeunload', function() {
     window.openModal = ModalManager.open.bind(ModalManager);
     window.deleteJob = JobManager.deleteJob.bind(JobManager);
     window.deleteTask = JobManager.deleteTask.bind(JobManager);
+    window.clearCompletedJobs = JobManager.clearCompletedJobs.bind(JobManager);
     window.performSearch = SearchManager.performSearch.bind(SearchManager);
     window.clearSearch = SearchManager.clearSearch.bind(SearchManager);
     window.refreshDashboard = DashboardManager.refreshDashboard.bind(DashboardManager);

@@ -22,6 +22,7 @@
                     <button class="clear-search-btn" onclick="clearSearch()" style="display: none;">Clear</button>
                 </div>
                 <button class="refresh-btn" onclick="loadJobs()">Refresh Jobs</button>
+                <button class="clear-completed-btn" onclick="clearCompletedJobs()" title="Clear all completed jobs">Clear Completed</button>
                 <div class="status-indicator" id="status-indicator">
                     <span class="status-dot"></span>
                     <span class="status-text">Connecting...</span>
@@ -115,12 +116,6 @@
                     <div class="analytics-card">
                         <h4>Failed Jobs</h4>
                         <div id="failed-jobs-list" class="analytics-list">
-                            <div class="loading">Loading...</div>
-                        </div>
-                    </div>
-                    <div class="analytics-card">
-                        <h4>Resource Usage</h4>
-                        <div id="resource-usage" class="analytics-list">
                             <div class="loading">Loading...</div>
                         </div>
                     </div>

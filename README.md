@@ -119,6 +119,7 @@ kumo/
 | `GET` | `/api/jobs/:jobId/dependencies` | Get task dependencies | `{dependencies: [], count: number}` |
 | `DELETE` | `/api/jobs/:jobId` | Delete job and all associated tasks | `{message: string, deletedJobId: string}` |
 | `DELETE` | `/api/jobs/:jobId/tasks/:taskId` | Delete specific task | `{message: string, deletedTaskId: string}` |
+| `DELETE` | `/api/jobs/completed` | Clear all completed jobs | `{message: string, deletedJobsCount: number, deletedJobIds: string[]}` |
 
 #### System Operations
 | Method | Endpoint | Description | Response |

@@ -199,6 +199,55 @@ class DatabaseService {
         };
     }
 
+    async clearCompletedJobs() {
+        const client = await this.pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // First, get the count of completed jobs for reporting
+            const countQuery = 'SELECT COUNT(*) as count FROM jobs WHERE state = $1';
+            const countResult = await client.query(countQuery, ['done']);
+            const completedJobsCount = parseInt(countResult.rows[0].count);
+
+            if (completedJobsCount === 0) {
+                await client.query('COMMIT');
+                return {
+                    deletedJobsCount: 0,
+                    message: 'No completed jobs found to delete'
+                };
+            }
+
+            // Get the job IDs that will be deleted for detailed reporting
+            const jobIdsQuery = 'SELECT id FROM jobs WHERE state = $1';
+            const jobIdsResult = await client.query(jobIdsQuery, ['done']);
+            const deletedJobIds = jobIdsResult.rows.map(row => row.id);
+
+            // Delete in correct order: task_deps -> tasks -> jobs
+            try {
+                await client.query('DELETE FROM task_deps WHERE job_id IN (SELECT id FROM jobs WHERE state = $1)', ['done']);
+            } catch (error) {
+                console.log('task_deps table or job_id column may not exist, skipping...');
+            }
+
+            await client.query('DELETE FROM tasks WHERE job_id IN (SELECT id FROM jobs WHERE state = $1)', ['done']);
+            await client.query('DELETE FROM jobs WHERE state = $1', ['done']);
+
+            await client.query('COMMIT');
+
+            return {
+                deletedJobsCount: completedJobsCount,
+                deletedJobIds: deletedJobIds,
+                message: `Successfully deleted ${completedJobsCount} completed job(s)`
+            };
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async getSchema() {
         const schemaQuery = `
             SELECT table_name, column_name, data_type, is_nullable

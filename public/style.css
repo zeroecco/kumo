@@ -135,6 +135,22 @@ body {
   background: #2980b9;
 }
 
+.clear-completed-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 8px;
+  transition: background-color 0.2s;
+}
+
+.clear-completed-btn:hover {
+  background: #c0392b;
+}
+
 .jobs-grid {
   display: grid;
   gap: 20px;
