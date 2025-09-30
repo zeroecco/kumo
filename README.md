@@ -56,6 +56,17 @@ kumo/
    ```
 
 2. **Configure environment variables:**
+
+   **Option A: Using .env file (Recommended)**
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+
+   # Edit the .env file with your configuration
+   vim .env
+   ```
+
+   **Option B: Using shell exports**
    ```bash
    # Database configuration
    export POSTGRES_HOST=localhost
@@ -346,6 +357,39 @@ npm run test:watch
 ```
 
 ## Environment Variables
+
+The application supports loading environment variables from a `.env` file or shell exports. The `.env` file approach is recommended for development.
+
+### .env File Format
+
+Create a `.env` file in the project root with the following variables:
+
+```bash
+# Database configuration
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=taskdb
+POSTGRES_USER=worker
+POSTGRES_PASSWORD=password
+
+# Application configuration
+NODE_ENV=development
+PORT=3001
+
+# Optional: Database pool configuration
+DB_POOL_MAX=20
+DB_POOL_IDLE_TIMEOUT=30000
+DB_POOL_CONNECTION_TIMEOUT=2000
+
+# Optional: Rate limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX=10000
+
+# Optional: CORS configuration
+ALLOWED_ORIGINS=*
+```
+
+### Environment Variable Reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
