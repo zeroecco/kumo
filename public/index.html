@@ -21,6 +21,29 @@
                     <button class="search-btn" onclick="performSearch()">Search</button>
                     <button class="clear-search-btn" onclick="clearSearch()" style="display: none;">Clear</button>
                 </div>
+                <div class="filter-container">
+                    <button class="filter-btn" id="status-filter-btn" onclick="toggleStatusFilter()">
+                        Filter Status <span class="filter-count"></span> ▼
+                    </button>
+                    <div class="filter-dropdown" id="status-filter-dropdown" style="display: none;">
+                        <label class="filter-option">
+                            <input type="checkbox" value="running" checked onchange="updateStatusFilter()">
+                            <span class="filter-label">Running</span>
+                        </label>
+                        <label class="filter-option">
+                            <input type="checkbox" value="done" checked onchange="updateStatusFilter()">
+                            <span class="filter-label">Done</span>
+                        </label>
+                        <label class="filter-option">
+                            <input type="checkbox" value="failed" checked onchange="updateStatusFilter()">
+                            <span class="filter-label">Failed</span>
+                        </label>
+                        <label class="filter-option">
+                            <input type="checkbox" value="pending" checked onchange="updateStatusFilter()">
+                            <span class="filter-label">Pending</span>
+                        </label>
+                    </div>
+                </div>
                 <button class="refresh-btn" onclick="loadJobs()">Refresh Jobs</button>
                 <button class="clear-completed-btn" onclick="clearCompletedJobs()" title="Clear all completed jobs">Clear Completed</button>
                 <button class="clear-failed-btn" onclick="clearFailedJobs()" title="Clear all failed jobs">Clear Failed</button>
