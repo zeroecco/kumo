@@ -121,6 +121,72 @@ body {
   background: #7f8c8d;
 }
 
+.filter-container {
+  position: relative;
+  display: inline-block;
+}
+
+.filter-btn {
+  background: #9b59b6;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.filter-btn:hover {
+  background: #8e44ad;
+}
+
+.filter-count {
+  font-weight: bold;
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  padding: 10px;
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-radius: 3px;
+}
+
+.filter-option:hover {
+  background: #f5f5f5;
+}
+
+.filter-option input[type="checkbox"] {
+  margin-right: 8px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.filter-label {
+  font-size: 14px;
+  user-select: none;
+}
+
 .refresh-btn {
   background: #3498db;
   color: white;

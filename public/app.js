@@ -20,7 +20,8 @@ class StateManager {
             retryDelay: 5000,
             searchTerm: '',
             isLoading: false,
-            error: null
+            error: null,
+            statusFilters: ['running', 'done', 'failed', 'pending']
         };
         this._listeners = new Set();
     }
@@ -510,7 +511,17 @@ class JobManager {
             return;
         }
 
-        const jobsHtml = state.jobs
+        // Filter jobs based on selected statuses
+        const filteredJobs = state.jobs.filter(job =>
+            state.statusFilters.includes(job.state)
+        );
+
+        if (filteredJobs.length === 0) {
+            container.innerHTML = '<div class="loading">No jobs match the selected filters</div>';
+            return;
+        }
+
+        const jobsHtml = filteredJobs
             .slice(0, CONFIG.MAX_JOBS_DISPLAY)
             .map(job => UIComponents.createJobCard(job))
             .join('');
@@ -949,6 +960,43 @@ class JobManager {
                     this.querySelector('.bar-tooltip').style.display = 'none';
                 });
             });
+        }
+    }
+}
+
+// ============================================================================
+// FILTER MANAGER
+// ============================================================================
+
+class FilterManager {
+    static toggleStatusFilter() {
+        const dropdown = document.getElementById('status-filter-dropdown');
+        const isVisible = dropdown.style.display === 'block';
+        dropdown.style.display = isVisible ? 'none' : 'block';
+    }
+
+    static updateStatusFilter() {
+        const checkboxes = document.querySelectorAll('#status-filter-dropdown input[type="checkbox"]');
+        const selectedStatuses = Array.from(checkboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+
+        stateManager.update({ statusFilters: selectedStatuses });
+
+        // Update filter count display
+        this.updateFilterCount(selectedStatuses.length);
+
+        // Re-display jobs with new filter
+        JobManager.displayJobs();
+    }
+
+    static updateFilterCount(count) {
+        const filterCount = document.querySelector('.filter-count');
+        if (count === 4) {
+            // All selected, don't show count
+            filterCount.textContent = '';
+        } else {
+            filterCount.textContent = `(${count})`;
         }
     }
 }
@@ -1518,6 +1566,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (closeBtn) {
         closeBtn.addEventListener('click', ModalManager.close);
     }
+
+    // Close filter dropdown when clicking outside
+    document.addEventListener('click', function(event) {
+        const filterContainer = document.querySelector('.filter-container');
+        const dropdown = document.getElementById('status-filter-dropdown');
+
+        if (filterContainer && dropdown && !filterContainer.contains(event.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
 });
 
 // Cleanup on page unload
@@ -1543,4 +1601,6 @@ window.addEventListener('beforeunload', function() {
     window.clearSearch = SearchManager.clearSearch.bind(SearchManager);
     window.refreshDashboard = DashboardManager.refreshDashboard.bind(DashboardManager);
     window.switchPage = NavigationManager.switchPage.bind(NavigationManager);
+    window.toggleStatusFilter = FilterManager.toggleStatusFilter.bind(FilterManager);
+    window.updateStatusFilter = FilterManager.updateStatusFilter.bind(FilterManager);
 })();
