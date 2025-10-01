@@ -37,7 +37,7 @@ class DatabaseService {
             .from('jobs j')
             .join('tasks t', 'j.id = t.job_id')
             .groupBy(['j.id', 'j.state', 'j.error', 'j.user_id', 'j.reported'])
-            .orderBy('j.id', 'DESC')
+            .orderBy('MIN(t.created_at)', 'DESC')
             .limit(limit)
             .offset(offset);
 

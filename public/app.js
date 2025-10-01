@@ -21,7 +21,7 @@ class StateManager {
             searchTerm: '',
             isLoading: false,
             error: null,
-            statusFilters: ['running', 'done', 'failed', 'pending']
+            statusFilters: ['running', 'done', 'failed']
         };
         this._listeners = new Set();
     }
@@ -228,6 +228,10 @@ class ApiService {
 
     static async getJobs(limit = 50, offset = 0) {
         return await this.request(`/jobs?limit=${limit}&offset=${offset}`);
+    }
+
+    static async getJobsByStatus(status, limit = 100, offset = 0) {
+        return await this.request(`/jobs?state=${status}&limit=${limit}&offset=${offset}`);
     }
 
     static async searchJobs(searchParams = {}) {
@@ -487,9 +491,23 @@ class JobManager {
 
             UIComponents.showLoading(container, 'Loading jobs...');
 
-            const response = await ApiService.getJobs();
+            // Get jobs for each selected status filter
+            const state = stateManager.state;
+            const allJobs = [];
+
+            // Valid job states that exist in the database
+            const validJobStates = ['running', 'done', 'failed'];
+
+            // Fetch jobs for each selected status (skip 'pending' as it's not a valid job state)
+            for (const status of state.statusFilters) {
+                if (validJobStates.includes(status)) {
+                    const response = await ApiService.getJobsByStatus(status);
+                    allJobs.push(...(response.jobs || []));
+                }
+            }
+
             stateManager.update({
-                jobs: response.jobs || [],
+                jobs: allJobs,
                 isLoading: false
             });
 
@@ -511,17 +529,7 @@ class JobManager {
             return;
         }
 
-        // Filter jobs based on selected statuses
-        const filteredJobs = state.jobs.filter(job =>
-            state.statusFilters.includes(job.state)
-        );
-
-        if (filteredJobs.length === 0) {
-            container.innerHTML = '<div class="loading">No jobs match the selected filters</div>';
-            return;
-        }
-
-        const jobsHtml = filteredJobs
+        const jobsHtml = state.jobs
             .slice(0, CONFIG.MAX_JOBS_DISPLAY)
             .map(job => UIComponents.createJobCard(job))
             .join('');
@@ -702,10 +710,6 @@ class JobManager {
                 <div class="stat">
                     <div class="stat-value">${tasks.filter(t => t.state === 'running').length}</div>
                     <div class="stat-label">Running</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">${tasks.filter(t => t.state === 'pending').length}</div>
-                    <div class="stat-label">Pending</div>
                 </div>
                 <div class="stat">
                     <div class="stat-value">${tasks.filter(t => t.state === 'failed').length}</div>
@@ -953,10 +957,10 @@ class JobManager {
             // Add event listeners for tooltips
             const bars = timelineContainer.querySelectorAll('.timeline-bar');
             bars.forEach(bar => {
-                bar.addEventListener('mouseenter', function() {
+                bar.addEventListener('mouseenter', function () {
                     this.querySelector('.bar-tooltip').style.display = 'block';
                 });
-                bar.addEventListener('mouseleave', function() {
+                bar.addEventListener('mouseleave', function () {
                     this.querySelector('.bar-tooltip').style.display = 'none';
                 });
             });
@@ -986,13 +990,13 @@ class FilterManager {
         // Update filter count display
         this.updateFilterCount(selectedStatuses.length);
 
-        // Re-display jobs with new filter
-        JobManager.displayJobs();
+        // Reload jobs from server with new filters
+        JobManager.loadJobs();
     }
 
     static updateFilterCount(count) {
         const filterCount = document.querySelector('.filter-count');
-        if (count === 4) {
+        if (count === 3) {
             // All selected, don't show count
             filterCount.textContent = '';
         } else {
@@ -1387,7 +1391,7 @@ class DashboardManager {
                     },
                     tooltip: {
                         callbacks: {
-                            label: function(context) {
+                            label: function (context) {
                                 const label = context.label || '';
                                 const value = context.parsed;
                                 const percentage = totalJobs > 0 ? Math.round((value / totalJobs) * 100) : 0;
@@ -1498,7 +1502,7 @@ class NavigationManager {
 const stateManager = new StateManager();
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Initial load
     JobManager.loadJobs();
 
@@ -1507,14 +1511,14 @@ document.addEventListener('DOMContentLoaded', function() {
     stateManager.update({ refreshInterval });
 
     // Modal event listeners
-    window.addEventListener('click', function(event) {
+    window.addEventListener('click', function (event) {
         const modal = document.getElementById('jobModal');
         if (event.target === modal) {
             ModalManager.close();
         }
     });
 
-    document.addEventListener('keydown', function(event) {
+    document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
             ModalManager.close();
         }
@@ -1530,14 +1534,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const searchInput = Utils.querySelector('#search-input');
     if (searchInput) {
         // Search on Enter key
-        searchInput.addEventListener('keypress', function(event) {
+        searchInput.addEventListener('keypress', function (event) {
             if (event.key === 'Enter') {
                 SearchManager.performSearch();
             }
         });
 
         // Debounced search on input
-        searchInput.addEventListener('input', Utils.debounce(function() {
+        searchInput.addEventListener('input', Utils.debounce(function () {
             if (this.value.trim()) {
                 SearchManager.performSearch();
             }
@@ -1547,7 +1551,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Navigation functionality
     const navButtons = document.querySelectorAll('.nav-btn');
     navButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function () {
             const pageName = this.dataset.page;
             NavigationManager.switchPage(pageName);
         });
@@ -1556,7 +1560,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Dashboard time range selector
     const timeRangeSelect = document.getElementById('time-range');
     if (timeRangeSelect) {
-        timeRangeSelect.addEventListener('change', function() {
+        timeRangeSelect.addEventListener('change', function () {
             DashboardManager.refreshDashboard();
         });
     }
@@ -1568,7 +1572,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Close filter dropdown when clicking outside
-    document.addEventListener('click', function(event) {
+    document.addEventListener('click', function (event) {
         const filterContainer = document.querySelector('.filter-container');
         const dropdown = document.getElementById('status-filter-dropdown');
 
@@ -1579,7 +1583,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Cleanup on page unload
-window.addEventListener('beforeunload', function() {
+window.addEventListener('beforeunload', function () {
     const state = stateManager.state;
     if (state.refreshInterval) {
         clearInterval(state.refreshInterval);
@@ -1587,7 +1591,7 @@ window.addEventListener('beforeunload', function() {
 });
 
 // Export functions for global access
-(function() {
+(function () {
     window.loadJobs = JobManager.loadJobs.bind(JobManager);
     window.viewJobDetails = JobManager.viewJobDetails.bind(JobManager);
     window.switchView = JobManager.switchView.bind(JobManager);
