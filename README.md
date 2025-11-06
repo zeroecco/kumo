@@ -140,6 +140,12 @@ kumo/
 | `GET` | `/api/schema` | Database schema information | `{schema: {}, tables: []}` |
 | `GET` | `/api/streams` | Retrieve data streams | `{streams: [], pagination: {}}` |
 
+#### Auto-Clear Service
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| `GET` | `/api/auto-clear/status` | Get auto-clear service status | `{enabled: boolean, running: boolean, interval: number, clearCompleted: boolean, clearFailed: boolean, nextRun: string}` |
+| `POST` | `/api/auto-clear/trigger` | Manually trigger auto-clear | `{message: string, result: {completed: {}, failed: {}}}` |
+
 ### Query Parameters
 
 #### Pagination
@@ -151,6 +157,41 @@ kumo/
 - `state` (string): Job state filter (`running`, `done`, `failed`, `pending`)
 - `user_id` (string): Filter by user ID
 - `partial` (boolean): Enable partial matching for jobId search
+
+## Auto-Clear Feature
+
+Kumo includes an optional auto-clear service that automatically removes completed (and optionally failed) jobs at regular intervals. This helps keep the database clean and prevents it from growing indefinitely with old job data.
+
+### Configuration
+
+The auto-clear service can be configured via environment variables:
+
+- `AUTO_CLEAR_ENABLED`: Enable/disable the service (default: `false`)
+- `AUTO_CLEAR_INTERVAL`: Clear interval in milliseconds (default: `3600000` = 1 hour)
+- `AUTO_CLEAR_COMPLETED`: Clear completed jobs (default: `true`)
+- `AUTO_CLEAR_FAILED`: Clear failed jobs (default: `false`)
+
+### Usage
+
+1. **Enable auto-clear** by setting `AUTO_CLEAR_ENABLED=true` in your `.env` file
+2. **Configure the interval** by setting `AUTO_CLEAR_INTERVAL` (in milliseconds)
+3. **Choose what to clear** by setting `AUTO_CLEAR_COMPLETED` and `AUTO_CLEAR_FAILED`
+
+### Monitoring
+
+- Check service status: `GET /api/auto-clear/status`
+- Manually trigger clear: `POST /api/auto-clear/trigger`
+- Service logs are displayed in the server console
+
+### Example Configuration
+
+```bash
+# Enable auto-clear every 30 minutes
+AUTO_CLEAR_ENABLED=true
+AUTO_CLEAR_INTERVAL=1800000
+AUTO_CLEAR_COMPLETED=true
+AUTO_CLEAR_FAILED=false
+```
 
 ## Architecture Overview
 
@@ -387,6 +428,12 @@ RATE_LIMIT_MAX=10000
 
 # Optional: CORS configuration
 ALLOWED_ORIGINS=*
+
+# Auto-clear configuration
+AUTO_CLEAR_ENABLED=false
+AUTO_CLEAR_INTERVAL=3600000
+AUTO_CLEAR_COMPLETED=true
+AUTO_CLEAR_FAILED=false
 ```
 
 ### Environment Variable Reference
@@ -401,6 +448,10 @@ ALLOWED_ORIGINS=*
 | `POSTGRES_USER` | worker | Database user |
 | `POSTGRES_PASSWORD` | password | Database password |
 | `ALLOWED_ORIGINS` | * | CORS allowed origins |
+| `AUTO_CLEAR_ENABLED` | false | Enable automatic job clearing |
+| `AUTO_CLEAR_INTERVAL` | 3600000 | Auto-clear interval in milliseconds (1 hour) |
+| `AUTO_CLEAR_COMPLETED` | true | Clear completed jobs automatically |
+| `AUTO_CLEAR_FAILED` | false | Clear failed jobs automatically |
 
 ## Contributing
 

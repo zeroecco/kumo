@@ -7,10 +7,12 @@ const router = express.Router();
 // Initialize database service (will be set by app.js)
 let dbService;
 let pool;
+let autoClearService;
 
-const setDependencies = (databaseService, databasePool) => {
+const setDependencies = (databaseService, databasePool, autoClearServiceInstance) => {
     dbService = databaseService;
     pool = databasePool;
+    autoClearService = autoClearServiceInstance;
 };
 
 // Get all jobs with task statistics
@@ -148,6 +150,34 @@ router.get("/schema", async (req, res) => {
     } catch (error) {
         res.status(500).json({
             error: "Failed to get schema info",
+            message: error.message
+        });
+    }
+});
+
+// Auto-clear service endpoints
+router.get("/auto-clear/status", async (req, res) => {
+    try {
+        const status = autoClearService.getStatus();
+        res.json(status);
+    } catch (error) {
+        res.status(500).json({
+            error: "Failed to get auto-clear status",
+            message: error.message
+        });
+    }
+});
+
+router.post("/auto-clear/trigger", async (req, res) => {
+    try {
+        const result = await autoClearService.triggerManualClear();
+        res.json({
+            message: "Manual auto-clear completed",
+            result
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: "Failed to trigger auto-clear",
             message: error.message
         });
     }

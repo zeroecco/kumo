@@ -6,6 +6,7 @@ const morgan = require("morgan");
 // Import modules
 const config = require("./config");
 const DatabaseService = require("./services/DatabaseService");
+const AutoClearService = require("./services/AutoClearService");
 const { setupSecurityMiddleware } = require("./middleware/security");
 const ErrorHandler = require("./middleware/errorHandler");
 const { router: apiRouter, setDependencies } = require("./routes/api");
@@ -27,6 +28,9 @@ pool.on('error', (err) => {
 
 // Initialize database service
 const dbService = new DatabaseService(pool);
+
+// Initialize auto-clear service
+const autoClearService = new AutoClearService(dbService, config);
 
 // ============================================================================
 // EXPRESS APP SETUP
@@ -59,7 +63,7 @@ app.use(express.static(path.join(__dirname, "public"), {
 // ============================================================================
 
 // Set up API routes with dependencies
-setDependencies(dbService, pool);
+setDependencies(dbService, pool, autoClearService);
 app.use('/api', apiRouter);
 
 // Serve the main HTML page
@@ -84,6 +88,9 @@ app.use(ErrorHandler.handle);
 
 const gracefulShutdown = async (signal) => {
     console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
+
+    // Stop auto-clear service
+    autoClearService.stop();
 
     // Stop accepting new requests
     server.close(() => {
@@ -111,6 +118,9 @@ const server = app.listen(config.port, '0.0.0.0', () => {
     console.log(`🚀 Kumo server running on http://0.0.0.0:${config.port}`);
     console.log(`📊 Environment: ${config.nodeEnv}`);
     console.log(`🗄️  Database: ${config.database.host}:${config.database.port}/${config.database.database}`);
+
+    // Start auto-clear service if enabled
+    autoClearService.start();
 });
 
 // Handle shutdown signals

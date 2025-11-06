@@ -24,6 +24,12 @@ const config = {
             (process.env.NODE_ENV === 'production' ? ['http://localhost:3000', 'http://localhost:3001'] : true),
         credentials: true,
         optionsSuccessStatus: 200
+    },
+    autoClear: {
+        enabled: process.env.AUTO_CLEAR_ENABLED === 'true' || false,
+        interval: parseInt(process.env.AUTO_CLEAR_INTERVAL) || 60 * 60 * 1000, // 1 hour in milliseconds
+        clearCompleted: process.env.AUTO_CLEAR_COMPLETED !== 'false', // default true
+        clearFailed: process.env.AUTO_CLEAR_FAILED === 'true' || false // default false
     }
 };
 
