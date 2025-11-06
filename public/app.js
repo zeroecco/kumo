@@ -415,6 +415,10 @@ class UIComponents {
                             <div class="mini-progress-fill failed" style="width: ${taskCount > 0 ? (failedTasks / taskCount) * 100 : 0}%"></div>
                         </div>
                     </div>
+                    <div class="stat">
+                        <div class="stat-value">${job.effective_hz_formatted || 'N/A'}</div>
+                        <div class="stat-label">Effective Hz</div>
+                    </div>
                 </div>
 
                 ${error ? `<div class="job-error">Error: ${error}</div>` : ''}

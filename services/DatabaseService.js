@@ -21,23 +21,29 @@ class DatabaseService {
         const { limit, offset } = Validator.validatePagination(pagination.limit, pagination.offset);
         const validSearchParams = Validator.validateSearchParams(searchParams);
 
+        const selectFields = [
+            'j.id',
+            'j.state',
+            'j.error',
+            'j.user_id',
+            'j.reported',
+            'COUNT(t.task_id) as task_count',
+            'COUNT(CASE WHEN t.state = \'done\' THEN 1 END) as completed_tasks',
+            'COUNT(CASE WHEN t.state = \'running\' THEN 1 END) as running_tasks',
+            'COUNT(CASE WHEN t.state = \'pending\' THEN 1 END) as pending_tasks',
+            'COUNT(CASE WHEN t.state = \'failed\' THEN 1 END) as failed_tasks',
+            '(SELECT CAST(output->>\'total_cycles\' AS decimal) FROM tasks WHERE task_id = \'init\' AND job_id = j.id) as total_cycles',
+            'EXTRACT(EPOCH FROM (MAX(t.updated_at) - MIN(t.started_at))) as elapsed_sec',
+            'MIN(t.created_at) as job_start',
+            'CASE WHEN j.state = \'running\' THEN NOW() ELSE MAX(t.updated_at) END as job_end'
+        ];
+
         const queryBuilder = new QueryBuilder()
-            .select([
-                'j.id',
-                'j.state',
-                'j.error',
-                'j.user_id',
-                'j.reported',
-                'COUNT(t.task_id) as task_count',
-                'COUNT(CASE WHEN t.state = \'done\' THEN 1 END) as completed_tasks',
-                'COUNT(CASE WHEN t.state = \'running\' THEN 1 END) as running_tasks',
-                'COUNT(CASE WHEN t.state = \'pending\' THEN 1 END) as pending_tasks',
-                'COUNT(CASE WHEN t.state = \'failed\' THEN 1 END) as failed_tasks'
-            ])
+            .select(selectFields)
             .from('jobs j')
             .join('tasks t', 'j.id = t.job_id')
             .groupBy(['j.id', 'j.state', 'j.error', 'j.user_id', 'j.reported'])
-            .orderBy('MIN(t.created_at)', 'DESC')
+            .orderBy('COUNT(CASE WHEN t.state = \'running\' THEN 1 END)', 'DESC')
             .limit(limit)
             .offset(offset);
 
@@ -61,11 +67,40 @@ class DatabaseService {
         const { query, params } = queryBuilder.build();
         const result = await this.pool.query(query, params);
 
+        // Calculate effective Hz for each job
+        const jobs = result.rows.map(job => {
+            const totalCycles = job.total_cycles ? parseFloat(job.total_cycles) : null;
+            const elapsedSec = job.elapsed_sec ? parseFloat(job.elapsed_sec) : null;
+            let effectiveHz = 0;
+            let effectiveHzFormatted = 'N/A';
+
+            if (totalCycles !== null && elapsedSec !== null && elapsedSec > 0) {
+                effectiveHz = totalCycles / elapsedSec;
+                effectiveHzFormatted = this.formatFrequency(effectiveHz);
+            }
+
+            return {
+                ...job,
+                effective_hz: effectiveHz,
+                effective_hz_formatted: effectiveHzFormatted
+            };
+        });
+
         return {
-            jobs: result.rows,
-            pagination: { limit, offset, count: result.rows.length },
+            jobs: jobs,
+            pagination: { limit, offset, count: jobs.length },
             search: validSearchParams
         };
+    }
+
+    formatFrequency(hz) {
+        if (hz >= 1000000) {
+            return `${(hz / 1000000).toFixed(2)} MHz`;
+        } else if (hz >= 1000) {
+            return `${(hz / 1000).toFixed(2)} KHz`;
+        } else {
+            return `${hz.toFixed(2)} Hz`;
+        }
     }
 
     async getJobDetails(jobId) {
